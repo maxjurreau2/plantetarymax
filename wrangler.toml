@@ -16,9 +16,6 @@ class_name = "BrokerDO"
 # --------------------------------------------------
 # Durable Object Migrations (SQLite Storage)
 # --------------------------------------------------
-[migrations]
-tag = "v1"
-new_sqlite_classes = "SubstrateDO"
 
 # --------------------------------------------------
 # Build
