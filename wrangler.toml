@@ -38,3 +38,12 @@ name = "portal-os"
 workers_dev = false
 route = "https://portal-os.com/*"
 zone_id = "2ef7ed61291f88b00e217731f446a140"
+
+[vars]
+KERNEL_STATUS_URL = "https://kernel.planetarymax.com/kernel/status"
+MESSAGE_QUEUE_RPC_URL = "https://kernel.planetarymax.com/queue/enqueue"
+IDENTITY_ADAPTER_RPC = "https://kernel.planetarymax.com/identity/check"
+GOVERNANCE_ADAPTER_RPC = "https://kernel.planetarymax.com/governance/check"
+EVENTS_PUBLISH_TOKEN = "dev-token"
+REDIS_URL = "redis://localhost:6379/0"
+
