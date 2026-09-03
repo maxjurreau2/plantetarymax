@@ -1,40 +1,37 @@
 name = "portal-os"
-main = "src/worker.ts"
+main = "src/index.ts"
 compatibility_date = "2024-08-01"
 
 # --------------------------------------------------
-# Durable Objects Bindings
+# Durable Objects (Workers v2)
 # --------------------------------------------------
-[durable_objects.bindings]
-name = "SubstrateDO"
-class_name = "SubstrateDO"
+[durable_objects]
+bindings = {
+  SubstrateDO = { class_name = "SubstrateDO" },
+  BrokerDO = { class_name = "BrokerDO" }
+}
 
-[durable_objects.bindings]
-name = "BrokerDO"
-class_name = "BrokerDO"
+[exports.SubstrateDO]
+type = "durable-object"
+storage = "sqlite"
+
+[exports.BrokerDO]
+type = "durable-object"
+storage = "sqlite"
 
 # --------------------------------------------------
-# Durable Object Migrations (SQLite Storage)
+# Hybrid Kernel Environment Variables
 # --------------------------------------------------
+[vars]
+KERNEL_STATUS_URL = "https://kernel.planetarymax.com/kernel/status"
+MESSAGE_QUEUE_RPC_URL = "https://kernel.planetarymax.com/queue/enqueue"
+IDENTITY_ADAPTER_RPC = "https://kernel.planetarymax.com/identity/check"
+GOVERNANCE_ADAPTER_RPC = "https://kernel.planetarymax.com/governance/check"
+EVENTS_PUBLISH_TOKEN = "dev-token"
+REDIS_URL = "redis://localhost:6379/0"
 
 # --------------------------------------------------
 # Build
 # --------------------------------------------------
 [build]
-command = "npm install && npm run build"
-
-# --------------------------------------------------
-# DEVELOPMENT
-# --------------------------------------------------
-[env.dev]
-name = "portal-os-dev"
-workers_dev = true
-
-# --------------------------------------------------
-# PRODUCTION (portal-os.com)
-# --------------------------------------------------
-[env.production]
-name = "portal-os"
-workers_dev = false
-route = "https://portal-os.com/*"
-zone_id = "2ef7ed61291f88b00e217731f446a140"
+command = "npm run build"
