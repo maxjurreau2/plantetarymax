@@ -18,7 +18,7 @@ class_name = "BrokerDO"
 # --------------------------------------------------
 [migrations]
 tag = "v1"
-new_sqlite_classes = "SubstrateDO", "BrokerDO"
+new_sqlite_classes = "SubstrateDO"
 
 # --------------------------------------------------
 # Build
