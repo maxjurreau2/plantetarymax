@@ -1,40 +1,48 @@
 name = "portal-os"
-main = "src/worker.ts"
+main = "src/index.ts"
 compatibility_date = "2024-08-01"
 
-# --------------------------------------------------
-# Durable Objects Bindings
-# --------------------------------------------------
-[durable_objects.bindings]
-name = "SubstrateDO"
-class_name = "SubstrateDO"
+# -----------------------------
+# Durable Objects (Workers v2)
+# -----------------------------
+[durable_objects]
+bindings = {
+  SubstrateDO = { class_name = "SubstrateDO" },
+  BrokerDO = { class_name = "BrokerDO" }
+}
 
-[durable_objects.bindings]
-name = "BrokerDO"
-class_name = "BrokerDO"
+[exports.SubstrateDO]
+type = "durable-object"
+storage = "sqlite"
 
-# --------------------------------------------------
-# Durable Object Migrations (SQLite Storage)
-# --------------------------------------------------
+[exports.BrokerDO]
+type = "durable-object"
+storage = "sqlite"
 
-# --------------------------------------------------
-# Build
-# --------------------------------------------------
+# -----------------------------
+# Environment Variables (Hybrid)
+# -----------------------------
+[vars]
+# Python kernel status endpoint (optional)
+KERNEL_STATUS_URL = ""
+
+# Message queue (Python or external)
+MESSAGE_QUEUE_URL = ""
+MESSAGE_QUEUE_RPC_URL = ""
+
+# Identity service (optional)
+IDENTITY_URL = ""
+IDENTITY_ADAPTER_RPC = ""
+
+# Governance service (optional)
+GOVERNANCE_URL = ""
+GOVERNANCE_ADAPTER_RPC = ""
+
+# Broker publish token
+EVENTS_PUBLISH_TOKEN = "dev-token"
+
+# -----------------------------
+# Node compatibility (optional)
+# -----------------------------
 [build]
-command = "npm install && npm run build"
-
-# --------------------------------------------------
-# DEVELOPMENT
-# --------------------------------------------------
-[env.dev]
-name = "portal-os-dev"
-workers_dev = true
-
-# --------------------------------------------------
-# PRODUCTION (portal-os.com)
-# --------------------------------------------------
-[env.production]
-name = "portal-os"
-workers_dev = false
-route = "https://portal-os.com/*"
-zone_id = "2ef7ed61291f88b00e217731f446a140"
+command = "npm run build"
