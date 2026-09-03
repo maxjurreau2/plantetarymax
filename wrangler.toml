@@ -1,4 +1,4 @@
-name = "portal-os"
+pooname = "portal-os"
 main = "src/worker.ts"
 compatibility_date = "2024-08-01"
 
@@ -7,9 +7,7 @@ compatibility_date = "2024-08-01"
 # --------------------------------------------------
 [durable_objects.bindings]
 name = "SubstrateDO"
-class_name = "SubstrateDO"
 
-[durable_objects.bindings]
 name = "BrokerDO"
 class_name = "BrokerDO"
 
