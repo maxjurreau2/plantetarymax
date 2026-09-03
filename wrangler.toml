@@ -1,29 +1,43 @@
-name = "rpc-worker"
-main = "src/index.ts"
-compatibility_date = "2026-01-01"
-type = "javascript"
+name = "portal-os"
+main = "src/worker.ts"
+compatibility_date = "2024-08-01"
 
-# Durable Object bindings
-[durable_objects]
-bindings = [
-  { name = "BROKER_DO", class_name = "BrokerDO" },
-  { name = "SUBSTRATE_DO", class_name = "SubstrateDO" }
-]
-
-[exports.BrokerDO]
-type = "durable-object"
-class_name = "BrokerDO"
-storage = "sqlite"
-
-[exports.SubstrateDO]
-type = "durable-object"
+# --------------------------------------------------
+# Durable Objects Bindings
+# --------------------------------------------------
+[[durable_objects.bindings]]
+name = "SubstrateDO"
 class_name = "SubstrateDO"
-storage = "sqlite"
 
-# Build step for Pages
+[[durable_objects.bindings]]
+name = "BrokerDO"
+class_name = "BrokerDO"
+
+# --------------------------------------------------
+# Durable Object Migrations (SQLite Storage)
+# --------------------------------------------------
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["SubstrateDO", "BrokerDO"]
+
+# --------------------------------------------------
+# Build
+# --------------------------------------------------
 [build]
-command = "cd ui/max-view && npm ci && npm run build"
-pages_build_output_dir = "ui/max-view/dist"
+command = "npm install && npm run build"
 
+# --------------------------------------------------
+# DEVELOPMENT
+# --------------------------------------------------
+[env.dev]
+name = "portal-os-dev"
+workers_dev = true
+
+# --------------------------------------------------
+# PRODUCTION (portal-os.com)
+# --------------------------------------------------
 [env.production]
-account_id = "<YOUR_ACCOUNT_ID>"
+name = "portal-os"
+workers_dev = false
+route = "https://portal-os.com/*"
+zone_id = "2ef7ed61291f88b00e217731f446a140"
