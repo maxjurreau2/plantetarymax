@@ -26,7 +26,7 @@ export class BrokerDO {
         await this._maybeSaveSnapshot(payload);
         return new Response(JSON.stringify({ ok: true }), {
           status: 200,
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json" }
         });
       } catch (err) {
         return new Response("invalid payload", { status: 400 });
@@ -38,12 +38,12 @@ export class BrokerDO {
         const snapshot = await this.state.storage.get("snapshot");
         return new Response(JSON.stringify(snapshot || {}), {
           status: 200,
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json" }
         });
       } catch (e) {
         return new Response("{}", {
           status: 200,
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json" }
         });
       }
     }
@@ -53,7 +53,7 @@ export class BrokerDO {
         JSON.stringify({ ok: true, ts: Date.now() / 1000 }),
         {
           status: 200,
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json" }
         }
       );
     }
@@ -65,7 +65,7 @@ export class BrokerDO {
     const headers = new Headers({
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
-      Connection: "keep-alive",
+      "Connection": "keep-alive"
     });
 
     const stream = new ReadableStream<string>({
@@ -75,11 +75,11 @@ export class BrokerDO {
         this.clients.set(clientId, { controller });
 
         const init = {
-          id: `conn-${Date.now()}`,
+          id: "conn-" + Date.now(),
           type: "connection.open",
           channel: url.searchParams.get("channel") || "global",
           payload: {},
-          ts: Date.now() / 1000,
+          ts: Date.now() / 1000
         };
         controller.enqueue(encodeSSE(init));
 
@@ -98,7 +98,7 @@ export class BrokerDO {
             this.clients.delete(clientId);
           });
         }
-      },
+      }
     });
 
     return new Response(stream, { headers });
@@ -124,11 +124,11 @@ export class BrokerDO {
 
 function encodeSSE(obj: any) {
   const data = JSON.stringify(obj);
-  return `data: ${data}\n\n`;
+  return "data: " + data + "\n\n";
 }
 
 function encodeRawSSE(data: string) {
-  return `data: ${data}\n\n`;
+  return "data: " + data + "\n\n";
 }
 
 export default {
@@ -142,8 +142,9 @@ export default {
         request.headers.get("authorization") ||
         "";
       let token: string | null = null;
-      if (auth.toLowerCase().startsWith("bearer "))
+      if (auth.toLowerCase().startsWith("bearer ")) {
         token = auth.split(/\s+/, 2)[1];
+      }
       if (!token) token = request.headers.get("x-events-token");
       if (!token || token !== env.EVENTS_PUBLISH_TOKEN) {
         return new Response("unauthorized", { status: 401 });
@@ -167,7 +168,7 @@ export default {
       return await obj.fetch("/_broadcast", {
         method: "POST",
         body: JSON.stringify(payload),
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" }
       });
     }
 
@@ -181,10 +182,10 @@ export default {
     if (pathname === "/healthz") {
       return new Response(JSON.stringify({ ok: true }), {
         status: 200,
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json" }
       });
     }
 
     return new Response("not found", { status: 404 });
-  },
+  }
 };
