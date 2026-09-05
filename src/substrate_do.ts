@@ -1,16 +1,17 @@
+import { getEnv } from "./env";
+
 export class SubstrateDO {
   state: DurableObjectState;
-  env: any;
+  env: ReturnType<typeof getEnv>;
 
-  constructor(state: DurableObjectState, env: any) {
+  constructor(state: DurableObjectState, rawEnv: any) {
     this.state = state;
-    this.env = env;
+    this.env = getEnv(rawEnv);
   }
 
   async fetch(request: Request) {
     const snapshot = await this.state.storage.get("snapshot");
-    return new Response(JSON.stringify(snapshot || {}), {
-      status: 200,
+    return new Response(JSON.stringify(snapshot ?? {}), {
       headers: { "Content-Type": "application/json" },
     });
   }
