@@ -1,32 +1,26 @@
 name = "portal-os"
 main = "src/worker.ts"
 compatibility_date = "2024-08-01"
-pages_build_output_dir = "dist"
+compatibility_flags = ["nodejs_compat"]
 
 [durable_objects]
-bindings = {
-  SubstrateDO = { class_name = "SubstrateDO" },
-  BrokerDO = { class_name = "BrokerDO" }
-}
+bindings = [
+  { name = "SubstrateDO", class_name = "SubstrateDO" },
+  { name = "BrokerDO", class_name = "BrokerDO" }
+]
 
 [exports.SubstrateDO]
 type = "durable-object"
-storage = "sqlite"
 state = "created"
+storage = "sqlite"
 
 [exports.BrokerDO]
 type = "durable-object"
-storage = "sqlite"
 state = "created"
-
-[build]
-command = "npm run build"
-cwd = "."
+storage = "sqlite"
 
 [env.dev]
-name = "portal-os-dev"
-workers_dev = true
-
-[env.production]
 name = "portal-os"
 workers_dev = true
+account_id = "8cbc375a878f16f16c058e8f6b212398"
+subdomain = "max-orion1"
