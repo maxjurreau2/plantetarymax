@@ -6,6 +6,10 @@ pages_build_output_dir = "dist"
 [durable_objects]
 bindings = { SubstrateDO = { class_name = "SubstrateDO" },
              BrokerDO    = { class_name = "BrokerDO" } }
+bindings = {
+  SubstrateDO = { class_name = "SubstrateDO" },
+  BrokerDO = { class_name = "BrokerDO" }
+}
 
 [exports.SubstrateDO]
 type = "durable-object"
@@ -16,3 +20,15 @@ state = "created"
 type = "durable-object"
 storage = "sqlite"
 state = "created"
+
+[build]
+command = "npm run build"
+cwd = "."
+
+[env.dev]
+name = "portal-os-dev"
+workers_dev = true
+
+[env.production]
+name = "portal-os"
+workers_dev = true
