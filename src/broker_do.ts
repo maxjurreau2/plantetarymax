@@ -1,34 +1,43 @@
 import { getEnv } from "./env";
+import { startTrace, logTrace, endTrace } from "./tracing";
 
 export class BrokerDO {
   state: DurableObjectState;
   env: ReturnType<typeof getEnv>;
-  clients: Map<string, ReadableStreamDefaultController>;
-  nextId: number;
 
   constructor(state: DurableObjectState, rawEnv: any) {
     this.state = state;
     this.env = getEnv(rawEnv);
-    this.clients = new Map();
-    this.nextId = 1;
   }
 
   async fetch(request: Request) {
+    const ctx: any = {};
+    const trace = startTrace(ctx, "BrokerDO.fetch");
+
     const url = new URL(request.url);
     const path = url.pathname;
 
-    if (path === "/events/sse") return this.handleSSE(request, url);
-    if (path === "/_broadcast") return this.handleBroadcast(request);
-    if (path === "/events/snapshot") return this.handleSnapshot();
+    logTrace(ctx, "incoming_request", { path });
 
-    return new Response("not found", { status: 404 });
+    try {
+      if (path === "/events/sse") return await this.traceSSE(request, ctx);
+      if (path === "/_broadcast") return await this.traceBroadcast(request, ctx);
+      if (path === "/events/snapshot") return await this.traceSnapshot(ctx);
+
+      logTrace(ctx, "route_not_found", { path });
+      return new Response("not found", { status: 404 });
+    } finally {
+      endTrace(ctx);
+    }
   }
 
-  async handleSSE(request: Request, url: URL) {
+  async traceSSE(request: Request, ctx: any) {
+    logTrace(ctx, "sse_start");
+
     const stream = new ReadableStream({
       start: (controller) => {
-        const id = String(this.nextId++);
-        this.clients.set(id, controller);
+        const id = crypto.randomUUID();
+        logTrace(ctx, "sse_client_connected", { id });
 
         controller.enqueue(`data: ${JSON.stringify({
           type: "connection.open",
@@ -41,8 +50,8 @@ export class BrokerDO {
         }, 20000);
 
         (controller as any).closed?.finally(() => {
+          logTrace(ctx, "sse_client_disconnected", { id });
           clearInterval(keepAlive);
-          this.clients.delete(id);
         });
       },
     });
@@ -56,27 +65,22 @@ export class BrokerDO {
     });
   }
 
-  async handleBroadcast(request: Request) {
+  async traceBroadcast(request: Request, ctx: any) {
     const payload = await request.json();
-    const data = `data: ${JSON.stringify(payload)}\n\n`;
-
-    for (const [id, controller] of this.clients.entries()) {
-      try {
-        controller.enqueue(data);
-      } catch {
-        this.clients.delete(id);
-      }
-    }
+    logTrace(ctx, "broadcast_received", { payload });
 
     await this.state.storage.put("snapshot", payload);
+    logTrace(ctx, "snapshot_saved");
 
     return new Response(JSON.stringify({ ok: true }), {
       headers: { "Content-Type": "application/json" },
     });
   }
 
-  async handleSnapshot() {
+  async traceSnapshot(ctx: any) {
     const snapshot = await this.state.storage.get("snapshot");
+    logTrace(ctx, "snapshot_read", { snapshot });
+
     return new Response(JSON.stringify(snapshot ?? {}), {
       headers: { "Content-Type": "application/json" },
     });
