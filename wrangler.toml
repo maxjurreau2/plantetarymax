@@ -2,16 +2,13 @@ name = "portal-os"
 main = "src/index.ts"
 compatibility_date = "2026-09-04"
 
-# Durable Objects — SINGLE BLOCK ONLY
 [durable_objects]
 bindings = [
   { name = "PORTAL", class_name = "PortalObject" }
 ]
 
-# Migrations — must use double brackets
 [[migrations]]
 tag = "v1"
 new_classes = ["PortalObject"]
 
-# Cloudflare Pages build output
 pages_build_output_dir = "dist"
