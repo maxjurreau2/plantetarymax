@@ -3,61 +3,25 @@ import { SubstrateDO } from "./substrate_do";
 
 export { BrokerDO, SubstrateDO };
 
-export default {
-  async fetch(request: Request, env: any) {
-    const url = new URL(request.url);
-    const { pathname, searchParams } = url;
-    const method = request.method;
-
-    //
-    // ------------------------------------------------------------
-    // ROUTE TABLE (clean, declarative)
-    // ------------------------------------------------------------
-    //
-    const routes: Record<string, Function> = {
-      "/events/sse": () => handleEventsSSE(request, env, searchParams),
-      "/events/publish": () => handleEventsPublish(request, env, searchParams),
-      "/events/snapshot": () => handleEventsSnapshot(request, env, searchParams),
-
-      "/substrate": () => handleSubstrate(request, env),
-      "/substrate/save": () => handleSubstrateSave(request, env),
-      "/substrate/load": () => handleSubstrateLoad(request, env),
-
-      "/healthz": () => handleHealth(),
-      "/debug/routes": () => handleDebugRoutes(),
-    };
-
-    //
-    // ------------------------------------------------------------
-    // ROUTE DISPATCH
-    // ------------------------------------------------------------
-    //
-    if (routes[pathname]) {
-      return routes[pathname]();
-    }
-
-    return new Response("not found", { status: 404 });
-  },
-};
-
 //
 // ============================================================
-// EVENT HANDLERS → BrokerDO
+// MIDDLEWARE LAYER
 // ============================================================
 //
 
-async function handleEventsSSE(request: Request, env: any, searchParams: URLSearchParams) {
-  const channel = searchParams.get("channel") || "global";
-  const id = env.BrokerDO.idFromName(channel);
-  const obj = env.BrokerDO.get(id);
-  return obj.fetch(request);
+async function logRequest(request: Request) {
+  const url = new URL(request.url);
+  console.log(
+    JSON.stringify({
+      ts: Date.now(),
+      method: request.method,
+      path: url.pathname,
+      query: Object.fromEntries(url.searchParams.entries()),
+    })
+  );
 }
 
-async function handleEventsPublish(request: Request, env: any, searchParams: URLSearchParams) {
-  if (request.method !== "POST") {
-    return new Response("method not allowed", { status: 405 });
-  }
-
+function requireToken(request: Request, env: any) {
   const auth =
     request.headers.get("Authorization") ||
     request.headers.get("authorization") ||
@@ -72,6 +36,38 @@ async function handleEventsPublish(request: Request, env: any, searchParams: URL
     return new Response("unauthorized", { status: 401 });
   }
 
+  return null;
+}
+
+function recordMetric(env: any, name: string) {
+  try {
+    env.METRICS?.increment(name);
+  } catch {}
+}
+
+//
+// ============================================================
+// ROUTE HANDLERS
+// ============================================================
+//
+
+async function handleEventsSSE(request: Request, env: any, searchParams: URLSearchParams) {
+  const channel = searchParams.get("channel") || "global";
+  const id = env.BrokerDO.idFromName(channel);
+  const obj = env.BrokerDO.get(id);
+
+  recordMetric(env, "events_sse");
+  return obj.fetch(request);
+}
+
+async function handleEventsPublish(request: Request, env: any, searchParams: URLSearchParams) {
+  if (request.method !== "POST") {
+    return new Response("method not allowed", { status: 405 });
+  }
+
+  const authErr = requireToken(request, env);
+  if (authErr) return authErr;
+
   const payload = await request.json();
   const channel =
     payload.channel ||
@@ -80,6 +76,8 @@ async function handleEventsPublish(request: Request, env: any, searchParams: URL
 
   const id = env.BrokerDO.idFromName(channel);
   const obj = env.BrokerDO.get(id);
+
+  recordMetric(env, "events_publish");
 
   return obj.fetch("/_broadcast", {
     method: "POST",
@@ -92,14 +90,10 @@ async function handleEventsSnapshot(request: Request, env: any, searchParams: UR
   const channel = searchParams.get("channel") || "global";
   const id = env.BrokerDO.idFromName(channel);
   const obj = env.BrokerDO.get(id);
+
+  recordMetric(env, "events_snapshot");
   return obj.fetch("/events/snapshot");
 }
-
-//
-// ============================================================
-// SUBSTRATE HANDLERS → SubstrateDO
-// ============================================================
-//
 
 function getSubstrate(env: any) {
   const id = env.SubstrateDO.idFromName("substrate");
@@ -107,6 +101,7 @@ function getSubstrate(env: any) {
 }
 
 async function handleSubstrate(request: Request, env: any) {
+  recordMetric(env, "substrate_read");
   return getSubstrate(env).fetch(request);
 }
 
@@ -114,18 +109,15 @@ async function handleSubstrateSave(request: Request, env: any) {
   if (request.method !== "POST") {
     return new Response("method not allowed", { status: 405 });
   }
+
+  recordMetric(env, "substrate_save");
   return getSubstrate(env).fetch(request);
 }
 
 async function handleSubstrateLoad(request: Request, env: any) {
+  recordMetric(env, "substrate_load");
   return getSubstrate(env).fetch(request);
 }
-
-//
-// ============================================================
-// SYSTEM ROUTES
-// ============================================================
-//
 
 function handleHealth() {
   return new Response(JSON.stringify({ ok: true }), {
@@ -153,4 +145,39 @@ function handleDebugRoutes() {
       headers: { "Content-Type": "application/json" },
     }
   );
-      }
+}
+
+//
+// ============================================================
+// MAIN WORKER ROUTER
+// ============================================================
+//
+
+export default {
+  async fetch(request: Request, env: any) {
+    const url = new URL(request.url);
+    const { pathname, searchParams } = url;
+
+    await logRequest(request);
+
+    const routes: Record<string, Function> = {
+      "/events/sse": () => handleEventsSSE(request, env, searchParams),
+      "/events/publish": () => handleEventsPublish(request, env, searchParams),
+      "/events/snapshot": () => handleEventsSnapshot(request, env, searchParams),
+
+      "/substrate": () => handleSubstrate(request, env),
+      "/substrate/save": () => handleSubstrateSave(request, env),
+      "/substrate/load": () => handleSubstrateLoad(request, env),
+
+      "/healthz": () => handleHealth(),
+      "/debug/routes": () => handleDebugRoutes(),
+    };
+
+    if (routes[pathname]) {
+      return routes[pathname]();
+    }
+
+    return new Response("not found", { status: 404 });
+  },
+};
+
