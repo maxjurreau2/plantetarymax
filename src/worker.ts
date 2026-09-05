@@ -5,29 +5,56 @@ export { BrokerDO, SubstrateDO };
 
 //
 // ============================================================
-// MIDDLEWARE LAYER
+// PIPELINE LAYER
 // ============================================================
 //
 
-async function logRequest(request: Request) {
-  const url = new URL(request.url);
-  console.log(
-    JSON.stringify({
-      ts: Date.now(),
-      method: request.method,
-      path: url.pathname,
-      query: Object.fromEntries(url.searchParams.entries()),
-    })
-  );
+// Unified pipeline runner
+async function runPipeline(request, env, context, middleware) {
+  for (const fn of middleware) {
+    const result = await fn(request, env, context);
+    if (result instanceof Response) return result; // early exit
+  }
+  return null;
 }
 
-function requireToken(request: Request, env: any) {
+// Logging middleware (structural)
+async function mwLog(request, env, context) {
+  const url = new URL(request.url);
+
+  context.request = {
+    ts: Date.now(),
+    method: request.method,
+    path: url.pathname,
+    query: Object.fromEntries(url.searchParams.entries()),
+    id: crypto.randomUUID(),
+  };
+
+  console.log(JSON.stringify({ event: "request", ...context.request }));
+}
+
+// Correlation ID middleware
+async function mwCorrelation(request, env, context) {
+  context.correlationId = crypto.randomUUID();
+}
+
+// Metrics middleware factory
+function mwMetric(name) {
+  return async (request, env, context) => {
+    try {
+      env.METRICS?.increment(name);
+    } catch {}
+  };
+}
+
+// Auth middleware (only for protected routes)
+async function mwAuth(request, env, context) {
   const auth =
     request.headers.get("Authorization") ||
     request.headers.get("authorization") ||
     "";
 
-  let token: string | null = null;
+  let token = null;
   if (auth.toLowerCase().startsWith("bearer "))
     token = auth.split(/\s+/, 2)[1];
   if (!token) token = request.headers.get("x-events-token");
@@ -35,98 +62,73 @@ function requireToken(request: Request, env: any) {
   if (!token || token !== env.EVENTS_PUBLISH_TOKEN) {
     return new Response("unauthorized", { status: 401 });
   }
-
-  return null;
-}
-
-function recordMetric(env: any, name: string) {
-  try {
-    env.METRICS?.increment(name);
-  } catch {}
 }
 
 //
 // ============================================================
-// ROUTE HANDLERS
+// HANDLER LAYER (pure functions)
 // ============================================================
 //
 
-async function handleEventsSSE(request: Request, env: any, searchParams: URLSearchParams) {
-  const channel = searchParams.get("channel") || "global";
+async function hEventsSSE(request, env, context) {
+  const params = new URL(request.url).searchParams;
+  const channel = params.get("channel") || "global";
+
   const id = env.BrokerDO.idFromName(channel);
-  const obj = env.BrokerDO.get(id);
-
-  recordMetric(env, "events_sse");
-  return obj.fetch(request);
+  return env.BrokerDO.get(id).fetch(request);
 }
 
-async function handleEventsPublish(request: Request, env: any, searchParams: URLSearchParams) {
-  if (request.method !== "POST") {
-    return new Response("method not allowed", { status: 405 });
-  }
-
-  const authErr = requireToken(request, env);
-  if (authErr) return authErr;
-
+async function hEventsPublish(request, env, context) {
+  const params = new URL(request.url).searchParams;
   const payload = await request.json();
+
   const channel =
     payload.channel ||
-    searchParams.get("channel") ||
+    params.get("channel") ||
     "global";
 
   const id = env.BrokerDO.idFromName(channel);
-  const obj = env.BrokerDO.get(id);
 
-  recordMetric(env, "events_publish");
-
-  return obj.fetch("/_broadcast", {
+  return env.BrokerDO.get(id).fetch("/_broadcast", {
     method: "POST",
     body: JSON.stringify(payload),
     headers: { "Content-Type": "application/json" },
   });
 }
 
-async function handleEventsSnapshot(request: Request, env: any, searchParams: URLSearchParams) {
-  const channel = searchParams.get("channel") || "global";
-  const id = env.BrokerDO.idFromName(channel);
-  const obj = env.BrokerDO.get(id);
+async function hEventsSnapshot(request, env, context) {
+  const params = new URL(request.url).searchParams;
+  const channel = params.get("channel") || "global";
 
-  recordMetric(env, "events_snapshot");
-  return obj.fetch("/events/snapshot");
+  const id = env.BrokerDO.idFromName(channel);
+  return env.BrokerDO.get(id).fetch("/events/snapshot");
 }
 
-function getSubstrate(env: any) {
+function substrate(env) {
   const id = env.SubstrateDO.idFromName("substrate");
   return env.SubstrateDO.get(id);
 }
 
-async function handleSubstrate(request: Request, env: any) {
-  recordMetric(env, "substrate_read");
-  return getSubstrate(env).fetch(request);
+async function hSubstrate(request, env, context) {
+  return substrate(env).fetch(request);
 }
 
-async function handleSubstrateSave(request: Request, env: any) {
-  if (request.method !== "POST") {
-    return new Response("method not allowed", { status: 405 });
-  }
-
-  recordMetric(env, "substrate_save");
-  return getSubstrate(env).fetch(request);
+async function hSubstrateSave(request, env, context) {
+  return substrate(env).fetch(request);
 }
 
-async function handleSubstrateLoad(request: Request, env: any) {
-  recordMetric(env, "substrate_load");
-  return getSubstrate(env).fetch(request);
+async function hSubstrateLoad(request, env, context) {
+  return substrate(env).fetch(request);
 }
 
-function handleHealth() {
+function hHealth() {
   return new Response(JSON.stringify({ ok: true }), {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });
 }
 
-function handleDebugRoutes() {
+function hDebugRoutes() {
   return new Response(
     JSON.stringify({
       routes: [
@@ -138,46 +140,3 @@ function handleDebugRoutes() {
         "/substrate/load",
         "/healthz",
         "/debug/routes",
-      ],
-    }),
-    {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    }
-  );
-}
-
-//
-// ============================================================
-// MAIN WORKER ROUTER
-// ============================================================
-//
-
-export default {
-  async fetch(request: Request, env: any) {
-    const url = new URL(request.url);
-    const { pathname, searchParams } = url;
-
-    await logRequest(request);
-
-    const routes: Record<string, Function> = {
-      "/events/sse": () => handleEventsSSE(request, env, searchParams),
-      "/events/publish": () => handleEventsPublish(request, env, searchParams),
-      "/events/snapshot": () => handleEventsSnapshot(request, env, searchParams),
-
-      "/substrate": () => handleSubstrate(request, env),
-      "/substrate/save": () => handleSubstrateSave(request, env),
-      "/substrate/load": () => handleSubstrateLoad(request, env),
-
-      "/healthz": () => handleHealth(),
-      "/debug/routes": () => handleDebugRoutes(),
-    };
-
-    if (routes[pathname]) {
-      return routes[pathname]();
-    }
-
-    return new Response("not found", { status: 404 });
-  },
-};
-
