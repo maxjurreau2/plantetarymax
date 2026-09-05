@@ -20,6 +20,10 @@ state = "created"
 storage = "sqlite"
 
 [env.dev]
+name = "portal-os-dev"
+workers_dev = true
+
+[env.production]
 name = "portal-os"
 workers_dev = true
 account_id = "8cbc375a878f16f16c058e8f6b212398"
