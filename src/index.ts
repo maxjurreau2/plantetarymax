@@ -1,190 +1,192 @@
-export class BrokerDO {
-  state: DurableObjectState;
-  env: any;
-  clients: Map<string, { controller: ReadableStreamDefaultController<string> }>;
-  nextClientId: number;
+import { Hono } from "hono";
 
-  constructor(state: DurableObjectState, env: any) {
-    this.state = state;
-    this.env = env;
-    this.clients = new Map();
-    this.nextClientId = 1;
+// -----------------------------
+// Utility helpers
+// -----------------------------
+async function jsonSafe<T>(fn: () => Promise<T>, fallback: any) {
+  try {
+    return await fn();
+  } catch (err) {
+    return fallback;
   }
+}
 
-  async fetch(request: Request) {
-    const url = new URL(request.url);
-    const path = url.pathname;
-
-    if (path === "/events/sse") {
-      return await this.handleSSE(request, url);
-    }
-
-    if (path === "/_broadcast" && request.method === "POST") {
-      try {
-        const payload = await request.json();
-        this._broadcast(payload);
-        await this._maybeSaveSnapshot(payload);
-        return new Response(JSON.stringify({ ok: true }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      } catch (err) {
-        return new Response("invalid payload", { status: 400 });
-      }
-    }
-
-    if (path === "/events/snapshot" && request.method === "GET") {
-      try {
-        const snapshot = await this.state.storage.get("snapshot");
-        return new Response(JSON.stringify(snapshot || {}), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      } catch (e) {
-        return new Response("{}", {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }
-    }
-
-    if (path === "/healthz") {
-      return new Response(
-        JSON.stringify({ ok: true, ts: Date.now() / 1000 }),
-        {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
-    }
-
-    return new Response("not found", { status: 404 });
-  }
-
-  async handleSSE(request: Request, url: URL) {
-    const headers = new Headers({
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    });
-
-    const stream = new ReadableStream<string>({
-      start: async (controller) => {
-        const clientId = String(this.nextClientId++);
-        // @ts-ignore
-        this.clients.set(clientId, { controller });
-
-        const init = {
-          id: `conn-${Date.now()}`,
-          type: "connection.open",
-          channel: url.searchParams.get("channel") || "global",
-          payload: {},
-          ts: Date.now() / 1000,
-        };
-        controller.enqueue(encodeSSE(init));
-
-        await this._maybeSaveSnapshot(init);
-
-        const keepAlive = setInterval(() => {
-          try {
-            controller.enqueue(":\n\n");
-          } catch (e) {}
-        }, 20000);
-
-        const closed = (controller as any).closed as Promise<void>;
-        if (closed && typeof closed.then === "function") {
-          closed.finally(() => {
-            clearInterval(keepAlive);
-            this.clients.delete(clientId);
-          });
-        }
+// -----------------------------
+// Kernel Status Adapter
+// -----------------------------
+async function readKernelStatus(env: any) {
+  // 1. External binding
+  if (env.KERNEL_STATUS_URL) {
+    return jsonSafe(
+      async () => {
+        const res = await fetch(env.KERNEL_STATUS_URL);
+        return await res.json();
       },
+      { phase: "unknown", source: "kernel-status-url" }
+    );
+  }
+
+  // 2. Env fallback
+  if (env.KERNEL_STATUS) {
+    return JSON.parse(env.KERNEL_STATUS);
+  }
+
+  // 3. Dev fallback (local file written by kernel/boot.py)
+  return jsonSafe(
+    async () => {
+      const file = await env.ASSETS.get("kernel/status.json");
+      return JSON.parse(file);
+    },
+    { phase: "dev-fallback", updated_at: Date.now() / 1000 }
+  );
+}
+
+// -----------------------------
+// Message Queue Adapter
+// -----------------------------
+async function enqueueMessage(env: any, envelope: any) {
+  // 1. External queue
+  if (env.MESSAGE_QUEUE_URL) {
+    const res = await fetch(env.MESSAGE_QUEUE_URL, {
+      method: "POST",
+      body: JSON.stringify(envelope),
+      headers: { "Content-Type": "application/json" },
     });
-
-    return new Response(stream, { headers });
+    return await res.json();
   }
 
-  _broadcast(payload: any) {
-    const data = JSON.stringify(payload);
-    for (const [id, client] of this.clients.entries()) {
-      try {
-        client.controller.enqueue(encodeRawSSE(data));
-      } catch (e) {
-        this.clients.delete(id);
-      }
-    }
+  // 2. RPC queue
+  if (env.MESSAGE_QUEUE_RPC_URL) {
+    const res = await fetch(env.MESSAGE_QUEUE_RPC_URL, {
+      method: "POST",
+      body: JSON.stringify(envelope),
+      headers: { "Content-Type": "application/json" },
+    });
+    return await res.json();
   }
 
-  async _maybeSaveSnapshot(envelope: any) {
-    try {
-      await this.state.storage.put("snapshot", envelope);
-    } catch (e) {}
+  // 3. In‑memory dev queue
+  const id = crypto.randomUUID();
+  const q = env.__DEV_QUEUE || (env.__DEV_QUEUE = []);
+  q.push({ id, envelope });
+  return { message_id: id, status: "queued", dev_queue_size: q.length };
+}
+
+// -----------------------------
+// Identity Adapter
+// -----------------------------
+async function resolveIdentity(env: any, request: Request) {
+  const auth = request.headers.get("Authorization");
+
+  // 1. Dev token
+  if (auth === "Bearer dev-token") {
+    return { id: "dev", roles: ["admin"], mode: "dev-token" };
   }
+
+  // 2. External identity service
+  if (env.IDENTITY_URL) {
+    const res = await fetch(env.IDENTITY_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ auth }),
+    });
+    return await res.json();
+  }
+
+  // 3. RPC identity adapter
+  if (env.IDENTITY_ADAPTER_RPC_URL) {
+    const res = await fetch(env.IDENTITY_ADAPTER_RPC_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ auth }),
+    });
+    return await res.json();
+  }
+
+  return { id: "anonymous", roles: [], mode: "fallback" };
 }
 
-function encodeSSE(obj: any) {
-  const data = JSON.stringify(obj);
-  return `data: ${data}\n\n`;
+// -----------------------------
+// Governance Adapter
+// -----------------------------
+async function checkGovernance(env: any, action: string) {
+  // 1. External governance service
+  if (env.GOVERNANCE_URL) {
+    const res = await fetch(`${env.GOVERNANCE_URL}?q=${action}`);
+    return await res.json();
+  }
+
+  // 2. RPC governance adapter
+  if (env.GOVERNANCE_ADAPTER_RPC_URL) {
+    const res = await fetch(env.GOVERNANCE_ADAPTER_RPC_URL, {
+      method: "POST",
+      body: JSON.stringify({ action }),
+      headers: { "Content-Type": "application/json" },
+    });
+    return await res.json();
+  }
+
+  // 3. Local fallback
+  return { allow: true, reason: "local-fallback" };
 }
 
-function encodeRawSSE(data: string) {
-  return `data: ${data}\n\n`;
-}
+// -----------------------------
+// Unified Worker App
+// -----------------------------
+const app = new Hono();
 
-export default {
-  async fetch(request: Request, env: any) {
-    const url = new URL(request.url);
-    const pathname = url.pathname;
+// -----------------------------
+// GET /health
+// -----------------------------
+app.get("/health", (c) => {
+  return c.json({ status: "ok", timestamp: Date.now() });
+});
 
-    if (pathname === "/events/publish" && request.method === "POST") {
-      const auth =
-        request.headers.get("Authorization") ||
-        request.headers.get("authorization") ||
-        "";
-      let token: string | null = null;
-      if (auth.toLowerCase().startsWith("bearer "))
-        token = auth.split(/\s+/, 2)[1];
-      if (!token) token = request.headers.get("x-events-token");
-      if (!token || token !== env.EVENTS_PUBLISH_TOKEN) {
-        return new Response("unauthorized", { status: 401 });
-      }
+// -----------------------------
+// GET /kernel/status
+// -----------------------------
+app.get("/kernel/status", async (c) => {
+  const status = await readKernelStatus(c.env);
+  return c.json(status);
+});
 
-      let payload: any = null;
-      try {
-        payload = await request.json();
-      } catch (e) {
-        return new Response("invalid json", { status: 400 });
-      }
+// -----------------------------
+// POST /message
+// -----------------------------
+app.post("/message", async (c) => {
+  const envelope = await c.req.json();
 
-      const channel =
-        (payload && payload.channel && String(payload.channel)) ||
-        url.searchParams.get("channel") ||
-        "global";
+  if (!envelope.type || !envelope.body) {
+    return c.json({ error: "Invalid envelope" }, 400);
+  }
 
-      const id = env.BROKER_DO.idFromName(channel);
-      const obj = env.BROKER_DO.get(id);
+  const result = await enqueueMessage(c.env, envelope);
+  return c.json(result);
+});
 
-      return await obj.fetch("/_broadcast", {
-        method: "POST",
-        body: JSON.stringify(payload),
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+// -----------------------------
+// POST /auth
+// -----------------------------
+app.post("/auth", async (c) => {
+  const principal = await resolveIdentity(c.env, c.req);
+  return c.json(principal);
+});
 
-    if (pathname.startsWith("/events/")) {
-      const channel = url.searchParams.get("channel") || "global";
-      const id = env.BROKER_DO.idFromName(channel);
-      const obj = env.BROKER_DO.get(id);
-      return await obj.fetch(request);
-    }
+// -----------------------------
+// GET /governance/check
+// -----------------------------
+app.get("/governance/check", async (c) => {
+  const action = c.req.query("q") || "unknown";
+  const decision = await checkGovernance(c.env, action);
+  return c.json(decision);
+});
 
-    if (pathname === "/healthz") {
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+// -----------------------------
+// Default Portal‑OS dashboard
+// -----------------------------
+app.get("/", (c) => {
+  return c.text("Portal‑OS Unified Worker — PlanetaryMax Bridge Online");
+});
 
-    return new Response("not found", { status: 404 });
-  },
-};
+// -----------------------------
+export default app;
