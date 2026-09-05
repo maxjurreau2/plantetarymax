@@ -3,18 +3,12 @@ main = "src/worker.ts"
 compatibility_date = "2024-08-01"
 pages_build_output_dir = "dist"
 
-# --------------------------------------------------
-# Durable Objects (v2 schema)
-# --------------------------------------------------
 [durable_objects]
-type = "bindings"
-substrateDO = "substrateDO"
-brokerDO = "brokerDO" 
+bindings = {
+  SubstrateDO = { class_name = "SubstrateDO" },
+  BrokerDO = { class_name = "BrokerDO" }
+}
 
-
-# --------------------------------------------------
-# DO export blocks (v2 schema)
-# --------------------------------------------------
 [exports.SubstrateDO]
 type = "durable-object"
 storage = "sqlite"
@@ -25,25 +19,14 @@ type = "durable-object"
 storage = "sqlite"
 state = "created"
 
-# --------------------------------------------------
-# Build
-# --------------------------------------------------
 [build]
 command = "npm run build"
 cwd = "."
 
-# --------------------------------------------------
-# DEV (workers.dev)
-# --------------------------------------------------
 [env.dev]
 name = "portal-os-dev"
 workers_dev = true
 
-# --------------------------------------------------
-# PRODUCTION (portal-os.com)
-# --------------------------------------------------
 [env.production]
 name = "portal-os"
-workers_dev = false
-route = "https://portal-os.com/*"
-zone_id = "2ef7ed61291f88b00e217731f446a140"
+workers_dev = true
