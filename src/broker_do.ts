@@ -1,115 +1,84 @@
+import { getEnv } from "./env";
+
 export class BrokerDO {
   state: DurableObjectState;
-  env: any;
-  clients: Map<string, { controller: ReadableStreamDefaultController<string> }>;
-  nextClientId: number;
+  env: ReturnType<typeof getEnv>;
+  clients: Map<string, ReadableStreamDefaultController>;
+  nextId: number;
 
-  constructor(state: DurableObjectState, env: any) {
+  constructor(state: DurableObjectState, rawEnv: any) {
     this.state = state;
-    this.env = env;
+    this.env = getEnv(rawEnv);
     this.clients = new Map();
-    this.nextClientId = 1;
+    this.nextId = 1;
   }
 
   async fetch(request: Request) {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    if (path === "/events/sse") {
-      return await this.handleSSE(request, url);
-    }
-
-    if (path === "/_broadcast" && request.method === "POST") {
-      try {
-        const payload = await request.json();
-        this._broadcast(payload);
-        await this._maybeSaveSnapshot(payload);
-        return new Response(JSON.stringify({ ok: true }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      } catch {
-        return new Response("invalid payload", { status: 400 });
-      }
-    }
-
-    if (path === "/events/snapshot") {
-      const snapshot = await this.state.storage.get("snapshot");
-      return new Response(JSON.stringify(snapshot || {}), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
-
-    if (path === "/healthz") {
-      return new Response(JSON.stringify({ ok: true }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      });
-    }
+    if (path === "/events/sse") return this.handleSSE(request, url);
+    if (path === "/_broadcast") return this.handleBroadcast(request);
+    if (path === "/events/snapshot") return this.handleSnapshot();
 
     return new Response("not found", { status: 404 });
   }
 
   async handleSSE(request: Request, url: URL) {
-    const headers = new Headers({
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    });
+    const stream = new ReadableStream({
+      start: (controller) => {
+        const id = String(this.nextId++);
+        this.clients.set(id, controller);
 
-    const stream = new ReadableStream<string>({
-      start: async (controller) => {
-        const clientId = String(this.nextClientId++);
-        this.clients.set(clientId, { controller });
-
-        const init = {
-          id: `conn-${Date.now()}`,
+        controller.enqueue(`data: ${JSON.stringify({
           type: "connection.open",
-          channel: url.searchParams.get("channel") || "global",
-          payload: {},
-          ts: Date.now() / 1000,
-        };
-
-        controller.enqueue(encodeSSE(init));
-        await this._maybeSaveSnapshot(init);
+          id,
+          ts: Date.now(),
+        })}\n\n`);
 
         const keepAlive = setInterval(() => {
-          try {
-            controller.enqueue(":\n\n");
-          } catch {}
+          controller.enqueue(":\n\n");
         }, 20000);
 
         (controller as any).closed?.finally(() => {
           clearInterval(keepAlive);
-          this.clients.delete(clientId);
+          this.clients.delete(id);
         });
       },
     });
 
-    return new Response(stream, { headers });
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
+    });
   }
 
-  _broadcast(payload: any) {
-    const data = JSON.stringify(payload);
-    for (const [id, client] of this.clients.entries()) {
+  async handleBroadcast(request: Request) {
+    const payload = await request.json();
+    const data = `data: ${JSON.stringify(payload)}\n\n`;
+
+    for (const [id, controller] of this.clients.entries()) {
       try {
-        client.controller.enqueue(encodeRawSSE(data));
+        controller.enqueue(data);
       } catch {
         this.clients.delete(id);
       }
     }
+
+    await this.state.storage.put("snapshot", payload);
+
+    return new Response(JSON.stringify({ ok: true }), {
+      headers: { "Content-Type": "application/json" },
+    });
   }
 
-  async _maybeSaveSnapshot(envelope: any) {
-    await this.state.storage.put("snapshot", envelope);
+  async handleSnapshot() {
+    const snapshot = await this.state.storage.get("snapshot");
+    return new Response(JSON.stringify(snapshot ?? {}), {
+      headers: { "Content-Type": "application/json" },
+    });
   }
-}
-
-function encodeSSE(obj: any) {
-  return `data: ${JSON.stringify(obj)}\n\n`;
-}
-
-function encodeRawSSE(data: string) {
-  return `data: ${data}\n\n`;
 }
