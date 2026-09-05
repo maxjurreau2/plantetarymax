@@ -7,9 +7,10 @@ pages_build_output_dir = "dist"
 # Durable Objects (v2 schema)
 # --------------------------------------------------
 [durable_objects]
-bindings = {
-  SubstrateDO = { class_name = "SubstrateDO" },
-  BrokerDO = { class_name = "BrokerDO" },    }
+bindings = 
+SubstrateDO = "SubstrateDO"
+BrokerDO = = "BrokerDO" 
+
 
 # --------------------------------------------------
 # DO export blocks (v2 schema)
