@@ -1,3 +1,4 @@
+
 export function startTrace(ctx: any, name: string) {
   const spanId = crypto.randomUUID();
   const ts = Date.now();
