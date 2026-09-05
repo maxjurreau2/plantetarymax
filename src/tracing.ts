@@ -1,11 +1,10 @@
-// src/tracing.ts
-
 /**
- * Start a new span.
+ * Create a new tracing span.
  * - Assigns spanId
  * - Inherits traceId or creates a new one
  * - Sets parentSpanId if a span is already active
- * - Stores logs
+ * - Records start time
+ * - Initializes log array
  */
 export function startSpan(ctx: any, name: string) {
   const span = {
@@ -22,7 +21,7 @@ export function startSpan(ctx: any, name: string) {
 }
 
 /**
- * Append a log entry to the current span.
+ * Append a structured log entry to the active span.
  */
 export function logSpan(ctx: any, message: string, data: any = {}) {
   if (!ctx.currentSpan) return;
@@ -35,9 +34,9 @@ export function logSpan(ctx: any, message: string, data: any = {}) {
 }
 
 /**
- * End the current span.
- * - Computes duration
- * - Emits structured JSON log
+ * Finalize the active span.
+ * - Computes end time and duration
+ * - Emits a structured JSON log
  * - Clears ctx.currentSpan
  */
 export function endSpan(ctx: any) {
