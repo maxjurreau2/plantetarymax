@@ -3,13 +3,16 @@ main = "src/worker.ts"
 compatibility_date = "2024-08-01"
 pages_build_output_dir = "dist"
 
-[durable_objects]
-bindings = { SubstrateDO = { class_name = "SubstrateDO" },
-             BrokerDO    = { class_name = "BrokerDO" } }
-bindings = {
-  SubstrateDO = { class_name = "SubstrateDO" },
-  BrokerDO = { class_name = "BrokerDO" }
-}
+# --------------------------------------------------
+# Durable Objects (v2 schema)
+# --------------------------------------------------
+[[durable_objects]]
+name = "SubstrateDO"
+class_name = "SubstrateDO"
+
+[[durable_objects]]
+name = "BrokerDO"
+class_name = "BrokerDO"
 
 [exports.SubstrateDO]
 type = "durable-object"
