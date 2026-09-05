@@ -140,3 +140,81 @@ function hDebugRoutes() {
         "/substrate/load",
         "/healthz",
         "/debug/routes",
+      ],
+    }),
+    { status: 200, headers: { "Content-Type": "application/json" } }
+  );
+}
+
+//
+// ============================================================
+// ROUTER LAYER (declarative)
+// ============================================================
+//
+
+const ROUTES = {
+  "/events/sse": {
+    handler: hEventsSSE,
+    middleware: [mwMetric("events_sse")],
+  },
+  "/events/publish": {
+    handler: hEventsPublish,
+    middleware: [mwAuth, mwMetric("events_publish")],
+  },
+  "/events/snapshot": {
+    handler: hEventsSnapshot,
+    middleware: [mwMetric("events_snapshot")],
+  },
+
+  "/substrate": {
+    handler: hSubstrate,
+    middleware: [mwMetric("substrate_read")],
+  },
+  "/substrate/save": {
+    handler: hSubstrateSave,
+    middleware: [mwMetric("substrate_save")],
+  },
+  "/substrate/load": {
+    handler: hSubstrateLoad,
+    middleware: [mwMetric("substrate_load")],
+  },
+
+  "/healthz": {
+    handler: hHealth,
+    middleware: [],
+  },
+  "/debug/routes": {
+    handler: hDebugRoutes,
+    middleware: [],
+  },
+};
+
+//
+// ============================================================
+// MAIN WORKER
+// ============================================================
+//
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    const route = ROUTES[url.pathname];
+
+    if (!route) return new Response("not found", { status: 404 });
+
+    const context = {};
+
+    // Global middleware
+    const globalMW = [mwCorrelation, mwLog];
+    const globalResult = await runPipeline(request, env, context, globalMW);
+    if (globalResult) return globalResult;
+
+    // Route-specific middleware
+    const routeResult = await runPipeline(request, env, context, route.middleware);
+    if (routeResult) return routeResult;
+
+    // Handler
+    return route.handler(request, env, context);
+  },
+};
+
