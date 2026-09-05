@@ -7,8 +7,9 @@ pages_build_output_dir = "dist"
 # Durable Objects (v2 schema)
 # --------------------------------------------------
 [durable_objects]
-SubstrateDO = "SubstrateDO"
-BrokerDO = "BrokerDO" 
+type = bindings
+substrateDO = "substrateDO"
+brokerDO = "rokerDO" 
 
 
 # --------------------------------------------------
