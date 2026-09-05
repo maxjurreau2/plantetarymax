@@ -1,13 +1,19 @@
+// src/tracing.ts
 
-export function startTrace(ctx: any, name: string) {
-  const spanId = crypto.randomUUID();
-  const ts = Date.now();
-
+/**
+ * Start a new span.
+ * - Assigns spanId
+ * - Inherits traceId or creates a new one
+ * - Sets parentSpanId if a span is already active
+ * - Stores logs
+ */
+export function startSpan(ctx: any, name: string) {
   const span = {
-    spanId,
-    traceId: ctx.correlationId ?? crypto.randomUUID(),
+    spanId: crypto.randomUUID(),
+    traceId: ctx.traceId ?? crypto.randomUUID(),
+    parentSpanId: ctx.currentSpan?.spanId ?? null,
     name,
-    start: ts,
+    start: Date.now(),
     logs: [] as any[],
   };
 
@@ -15,7 +21,10 @@ export function startTrace(ctx: any, name: string) {
   return span;
 }
 
-export function logTrace(ctx: any, message: string, data: any = {}) {
+/**
+ * Append a log entry to the current span.
+ */
+export function logSpan(ctx: any, message: string, data: any = {}) {
   if (!ctx.currentSpan) return;
 
   ctx.currentSpan.logs.push({
@@ -25,14 +34,20 @@ export function logTrace(ctx: any, message: string, data: any = {}) {
   });
 }
 
-export function endTrace(ctx: any) {
+/**
+ * End the current span.
+ * - Computes duration
+ * - Emits structured JSON log
+ * - Clears ctx.currentSpan
+ */
+export function endSpan(ctx: any) {
   if (!ctx.currentSpan) return;
 
   const span = ctx.currentSpan;
   span.end = Date.now();
   span.durationMs = span.end - span.start;
 
-  console.log(JSON.stringify({ event: "trace", ...span }));
+  console.log(JSON.stringify({ event: "span", ...span }));
 
   ctx.currentSpan = null;
 }
