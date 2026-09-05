@@ -1,40 +1,17 @@
 name = "portal-os"
-main = "src/worker.ts"
-compatibility_date = "2024-08-01"
+main = "src/index.ts"
+compatibility_date = "2024-09-04"
 
-# --------------------------------------------------
-# Durable Objects Bindings
-# --------------------------------------------------
-[durable_objects.bindings]
-name = "SubstrateDO"
-class_name = "SubstrateDO"
+# Durable Objects — SINGLE BLOCK ONLY
+[durable_objects]
+bindings = [
+  { name = "PORTAL", class_name = "PortalObject" }
+]
 
-[durable_objects.bindings]
-name = "BrokerDO"
-class_name = "BrokerDO"
+# Migrations — must use double brackets
+[[migrations]]
+tag = "v1"
+new_classes = ["PortalObject"]
 
-# --------------------------------------------------
-# Durable Object Migrations (SQLite Storage)
-# --------------------------------------------------
-
-# --------------------------------------------------
-# Build
-# --------------------------------------------------
-[build]
-command = "npm install && npm run build"
-
-# --------------------------------------------------
-# DEVELOPMENT
-# --------------------------------------------------
-[env.dev]
-name = "portal-os-dev"
-workers_dev = true
-
-# --------------------------------------------------
-# PRODUCTION (portal-os.com)
-# --------------------------------------------------
-[env.production]
-name = "portal-os"
-workers_dev = false
-route = "https://portal-os.com/*"
-zone_id = "2ef7ed61291f88b00e217731f446a140"
+# Cloudflare Pages build output
+pages_build_output_dir = "dist"
