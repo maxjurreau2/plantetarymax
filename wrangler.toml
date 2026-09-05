@@ -9,7 +9,7 @@ pages_build_output_dir = "dist"
 [durable_objects]
 bindings = 
 SubstrateDO = "SubstrateDO"
-BrokerDO = = "BrokerDO" 
+BrokerDO = "BrokerDO" 
 
 
 # --------------------------------------------------
